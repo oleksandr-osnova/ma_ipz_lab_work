@@ -1,233 +1,192 @@
-import numpy as np
-from scipy.stats import kstest, t, norm, chi2, ttest_1samp
-from statsmodels.distributions.empirical_distribution import ECDF
-import pathlib
-import math
-import time
-import matplotlib.pyplot as plt
+class MultiListNode:
+    def __init__(self, value):
+        self.value = value
+        self.first_child = None  # Посилання на першу дитину
+        self.next_sibling = None  # Посилання на наступного брата
 
-# Створення теки для збереження графіків
-data_folder = pathlib.Path('./../../data/lab_1')
-output_data_folder = data_folder / 'output'
+class MultiList:
+    def __init__(self):
+        self.root = MultiListNode(None)
 
-# Крок 1: Генерація рівномірно розподілених випадкових чисел за заданою формулою
-def generate_uniform_random_numbers_with_formula(n):
-    # Константи для формули
-    modulus = 10**11
-    k = 2
-    multiplier = 7**(4 * k + 1)
+    def find_node(self, path):
+        """
+        Знаходить вузол за вказаним шляхом.
+        :param path: Список індексів для навігації.
+        :return: Вузол за шляхом.
+        """
+        current = self.root
+        for index in path:
+            current = current.first_child
+            for _ in range(index):
+                if current is None:
+                    raise IndexError("Шлях не існує.")
+                current = current.next_sibling
+            if current is None:
+                raise IndexError("Шлях не існує.")
+        return current
 
-    # Початкове значення на основі системного часу
-    b = int(time.time() * 1000) % modulus
+    def add_element(self, path, value):
+        if not path and self.root.first_child is not None:
+            raise ValueError("Корінь вже має елементи. Неможливо додати другий корінь.")
 
-    uniform_numbers = []
-    for _ in range(n):
-        b = (multiplier * b) % modulus
-        r = b / modulus  # Перетворення у діапазон [0, 1]
-        uniform_numbers.append(r)
+        parent = self.find_node(path) if path else self.root
+        new_node = MultiListNode(value)
+        if parent.first_child is None:
+            parent.first_child = new_node
+        else:
+            current = parent.first_child
+            while current.next_sibling is not None:
+                current = current.next_sibling
+            current.next_sibling = new_node
 
-    return uniform_numbers
+    def remove_element(self, path):
+        parent = self.find_node(path[:-1])
+        index = path[-1]
+        prev = None
+        current = parent.first_child
+        for _ in range(index):
+            if current is None:
+                raise IndexError("Шлях не існує.")
+            prev = current
+            current = current.next_sibling
 
-# Крок 2: Генерація нормально розподілених випадкових чисел за методом полярних координат
-def generate_normal_random_numbers(n):
-    results = []
-    while len(results) < n:
-        u1, u2 = np.random.uniform(0, 1), np.random.uniform(0, 1)
-        v1, v2 = 2 * u1 - 1, 2 * u2 - 1
-        s = v1**2 + v2**2
-        if s >= 1 or s == 0:
-            continue
-        multiplier = math.sqrt(-2 * math.log(s) / s)
-        results.append(v1 * multiplier)
-        if len(results) < n:
-            results.append(v2 * multiplier)
-    return results
+        if current is None:
+            raise IndexError("Шлях не існує.")
 
-# Крок 3: Тести для перевірки якості генерованих чисел
+        if prev is None:
+            parent.first_child = current.next_sibling
+        else:
+            prev.next_sibling = current.next_sibling
 
-def aperiodicity_test(data):
-    """Перевірка аперіодичності послідовності"""
-    n = len(data)
-    for period in range(1, n // 2):
-        if np.allclose(data[:n-period], data[period:n]):
-            return False
-    return True
+    def remove_level(self, path):
+        node = self.find_node(path)
+        node.first_child = None
 
-def moments_test(data):
-    """Перевірка збігу моментів: середнього та дисперсії"""
-    mean = np.mean(data)
-    variance = np.var(data, ddof=1)
-    expected_mean = 0.5
-    expected_variance = 1 / 12
-    return abs(mean - expected_mean) < 0.01 and abs(variance - expected_variance) < 0.01
+    def copy(self):
+        """
+        Створює копію мультисписку.
+        :return: Новий об'єкт MultiList з тими ж даними.
+        """
+        def recursive_copy(node):
+            if node is None:
+                return None
+            new_node = MultiListNode(node.value)
+            new_node.first_child = recursive_copy(node.first_child)
+            new_node.next_sibling = recursive_copy(node.next_sibling)
+            return new_node
 
+        new_list = MultiList()
+        new_list.root.first_child = recursive_copy(self.root.first_child)
+        return new_list
 
-def covariance_test(data, alpha=0.05):
-    """Перевірка коваріації між сусідніми значеннями в послідовності"""
-    n = len(data)
-    mean = np.mean(data)
-    covariance = np.cov(data[:-1], data[1:])[0, 1]
-    variance = np.var(data, ddof=1)
+    def clear(self):
+        self.root.first_child = None
 
-    # Обчислення критичного значення
-    t_crit = t.ppf(1 - alpha / 2, df=n - 2)
-    r_crit = t_crit / np.sqrt(n - 2 + t_crit**2)
-    max_covariance = r_crit * variance
+    def print(self):
+        def recursive_print(node, level, sibling_index):
+            space_delimiter = "   "
+            if node.value is not None:
+                print(space_delimiter * level + f"|-- [{node.value}] (Sibling {sibling_index})")
+            child = node.first_child
+            child_index = 0
+            while child is not None:
+                print(space_delimiter * (level + 1) + "↓")
+                recursive_print(child, level + 1, child_index)
+                child = child.next_sibling
+                child_index += 1
 
-    return abs(covariance) < max_covariance
+        if self.root.first_child is None:
+            print("Мультисписок порожній. Використайте 'Створити корінь' для початку.")
+        else:
+            print("Мультисписок:")
+            recursive_print(self.root.first_child, 0, 0)
 
-def kolmogorov_smirnov_test(data):
-    """Тест Колмогорова-Смірнова для нормального розподілу"""
-    statistic, p_value = kstest(data, 'norm')
-    return statistic, p_value
+def main():
+    multi_list = MultiList()
 
-def hypothesis_test_normal(data, theoretical_mean, theoretical_std):
-    """Перевірка гіпотези для нормального розподілу: середнє та дисперсія"""
-    # Перевірка середнього значення
-    t_statistic, t_p_value = ttest_1samp(data, theoretical_mean)
+    while True:
+        print("\nДоступні дії:")
 
-    # Перевірка дисперсії
-    variance = np.var(data, ddof=1)
-    n = len(data)
-    chi2_statistic = (n - 1) * variance / (theoretical_std**2)
-    chi2_p_value = chi2.sf(chi2_statistic, df=n-1)
+        if multi_list.root.first_child is None:
+            print("1. Створити корінь")
+            print("2. Вийти")
+        else:
+            print("1. Додати елемент")
+            print("2. Видалити елемент")
+            print("3. Видалити рівень")
+            print("4. Створити копію мультисписку")
+            print("5. Очистити мультисписок")
+            print("6. Переглянути мультисписок")
+            print("7. Вийти")
 
-    mean_result = "Пройдено" if t_p_value > 0.05 else "Не пройдено"
-    variance_result = "Пройдено" if chi2_p_value > 0.05 else "Не пройдено"
+        choice = input("Оберіть дію: ")
 
-    return {
-        "mean_test": {"t_statistic": t_statistic, "p_value": t_p_value, "result": mean_result},
-        "variance_test": {"chi2_statistic": chi2_statistic, "p_value": chi2_p_value, "result": variance_result}
-    }
+        if multi_list.root.first_child is None:
+            if choice == "1":
+                try:
+                    value = int(input("Введіть значення кореня: "))
+                    multi_list.add_element([], value)
+                    print("Корінний вузол створено.")
+                except Exception as e:
+                    print(f"Помилка: {e}")
 
-# Крок 4: Візуалізація послідовностей і тестів
+            elif choice == "2":
+                print("Вихід.")
+                break
 
-def plot_sequence(data, title, filename):
-    """Побудова графіка для візуалізації послідовності."""
-    fgr = plt.figure(filename, figsize=(10, 5))
-    plt.plot(data, marker='o', linestyle='')
-    plt.title(title)
-    plt.xlabel('Індекс')
-    plt.ylabel('Значення')
-    plt.grid()
-    plt.show()
-    fgr.savefig(output_data_folder / filename)
+            else:
+                print("Некоректний вибір. Спробуйте ще раз.")
 
-def plot_statistics(results):
-    """Побудова графіків для оцінки середнього, дисперсії та результатів тестів"""
-    results = np.array(results)
-    fgr = plt.figure()
-    plt.plot(results[:, 0], results[:, 1], label="Середнє")
-    plt.plot(results[:, 0], results[:, 2], label="Середньоквадратичне")
-    plt.title("Середнє та дисперсія для різних N")
-    plt.xlabel('N')
-    plt.ylabel('Значення')
-    plt.legend()
-    plt.grid()
-    plt.show()
-    fgr.savefig(output_data_folder / "mean_variance.png")
+        else:
+            if choice == "1":
+                try:
+                    path = input("Введіть шлях (наприклад, 0,1,2): ").strip()
+                    path = list(map(int, path.split(","))) if path else []
+                    value = int(input("Введіть значення: "))
+                    multi_list.add_element(path, value)
+                    print("Елемент додано.")
+                except Exception as e:
+                    print(f"Помилка: {e}")
 
-    fgr = plt.figure()
-    plt.plot(results[:, 0], results[:, 3], label="Аперіодичність")
-    plt.plot(results[:, 0], results[:, 4], label="Збіг моментів")
-    plt.plot(results[:, 0], results[:, 5], label="Коваріація")
-    plt.title("Результати тестів для різних N")
-    plt.xlabel('N')
-    plt.ylabel('Результат тесту (1 - пройдено, 0 - не пройдено)')
-    plt.legend()
-    plt.grid()
-    plt.show()
-    fgr.savefig(output_data_folder / "tests_results.png")
+            elif choice == "2":
+                try:
+                    path = input("Введіть шлях до елемента (наприклад, 0,1,2): ").strip()
+                    path = list(map(int, path.split(","))) if path else []
+                    multi_list.remove_element(path)
+                    print("Елемент видалено.")
+                except Exception as e:
+                    print(f"Помилка: {e}")
 
-def plot_normal_fit(data, theoretical_mean, theoretical_std, filename):
-    """Графік порівняння емпіричних даних із теоретичною щільністю нормального розподілу"""
-    x = np.linspace(min(data), max(data), 1000)
-    pdf = norm.pdf(x, theoretical_mean, theoretical_std)
+            elif choice == "3":
+                try:
+                    path = input("Введіть шлях до рівня (наприклад, 0,1): ").strip()
+                    path = list(map(int, path.split(","))) if path else []
+                    multi_list.remove_level(path)
+                    print("Рівень видалено.")
+                except Exception as e:
+                    print(f"Помилка: {e}")
 
-    fgr = plt.figure(filename, figsize=(10, 6))
-    plt.hist(data, bins=30, density=True, alpha=0.6, color='skyblue', label='Емпіричні дані')
-    plt.plot(x, pdf, 'r', lw=2, label='Теоретичний нормальний розподіл')
-    plt.title("Емпіричний vs Теоретичний нормальний розподіл")
-    plt.xlabel("Значення")
-    plt.ylabel("Щільність")
-    plt.legend()
-    plt.grid()
-    plt.show()
-    fgr.savefig(output_data_folder / filename)
+            elif choice == "4":
+                try:
+                    copied_list = multi_list.copy()
+                    print("Копія створена. Ось копія мультисписку:")
+                    copied_list.print()
+                except Exception as e:
+                    print(f"Помилка: {e}")
 
+            elif choice == "5":
+                multi_list.clear()
+                print("Мультисписок очищено.")
 
-def plot_cdf_comparison(data, theoretical_mean, theoretical_std, filename):
-    """Порівняння емпіричної та теоретичної функцій розподілу (CDF)."""
-    ecdf = ECDF(data)
-    x = np.linspace(min(data), max(data), 1000)
-    cdf = norm.cdf(x, loc=theoretical_mean, scale=theoretical_std)
+            elif choice == "6":
+                multi_list.print()
 
-    fgr = plt.figure(filename, figsize=(10, 6))
-    plt.plot(x, ecdf(x), label="Емпірична CDF", color='blue')
-    plt.plot(x, cdf, label="Теоретична CDF", linestyle="--", color='red')
-    plt.title("Порівняння емпіричної і теоретичної CDF")
-    plt.xlabel("Значення")
-    plt.ylabel("Ймовірність")
-    plt.legend()
-    plt.grid()
-    fgr.savefig(output_data_folder /filename)
-    plt.show()
+            elif choice == "7":
+                print("Вихід.")
+                break
 
-# Крок 5: Оцінка обсягу N для заданої точності
+            else:
+                print("Некоректний вибір. Спробуйте ще раз.")
 
-def evaluate_sample_size():
-    """Оцінка якості при різних значеннях вибірки N"""
-    results = []
-    for n in range(50, 1050, 50):
-        uniform_numbers = generate_uniform_random_numbers_with_formula(n)
-        mean = np.mean(uniform_numbers)
-        variance = np.var(uniform_numbers, ddof=1)
-        aperiodicity = 1 if aperiodicity_test(uniform_numbers) else 0
-        moments = 1 if moments_test(uniform_numbers) else 0
-        covariance = 1 if covariance_test(uniform_numbers) else 0
-        results.append((n, mean, variance, aperiodicity, moments, covariance))
-    return results
-
-# Генерація послідовностей і тестування
-N = 1000
-uniform_numbers = generate_uniform_random_numbers_with_formula(N)
-normal_numbers = generate_normal_random_numbers(N)
-
-# Візуалізація
-plot_sequence(uniform_numbers, "Рівномірно розподілені випадкові числа (задана формула)", "uniform_numbers.png")
-plot_sequence(normal_numbers, "Нормально розподілені випадкові числа", "normal_numbers.png")
-
-# Перевірка якості рівномірно розподілених чисел
-is_aperiodic = aperiodicity_test(uniform_numbers)
-is_moments_ok = moments_test(uniform_numbers)
-is_covariance_ok = covariance_test(uniform_numbers)
-ks_statistic, ks_p_value = kolmogorov_smirnov_test(normal_numbers)
-
-print(f"Результати тестів для рівномірного розподілу:")
-print(f"Аперіодичність: {'Пройдено' if is_aperiodic else 'Не пройдено'}")
-print(f"Збіг моментів: {'Пройдено' if is_moments_ok else 'Не пройдено'}")
-print(f"Коваріація: {'Пройдено' if is_covariance_ok else 'Не пройдено'}")
-print(f"Результати тесту Колмогорова-Смірнова для нормального розподілу:")
-print(f"Статистика: {ks_statistic}, p-значення: {ks_p_value}")
-
-# Перевірка гіпотези для нормального розподілу
-theoretical_mean = 0
-theoretical_std = 1
-normal_test_results = hypothesis_test_normal(normal_numbers, theoretical_mean, theoretical_std)
-
-print("\nПеревірка гіпотези про збіг параметрів моделювання:")
-print(f"Середнє значення: t-статистика = {normal_test_results['mean_test']['t_statistic']}, "
-      f"p-значення = {normal_test_results['mean_test']['p_value']}, Результат = {normal_test_results['mean_test']['result']}")
-print(f"Дисперсія: хі-квадрат статистика = {normal_test_results['variance_test']['chi2_statistic']}, "
-      f"p-значення = {normal_test_results['variance_test']['p_value']}, Результат = {normal_test_results['variance_test']['result']}")
-
-# Оцінка обсягу N для заданої точності
-sample_size_results = evaluate_sample_size()
-plot_statistics(sample_size_results)
-
-# Побудова графіка порівняння нормального розподілу
-plot_normal_fit(normal_numbers, theoretical_mean, theoretical_std, "normal_fit.png")
-
-# Побудова графіка порівняння CDF
-plot_cdf_comparison(normal_numbers, theoretical_mean, theoretical_std, "cdf_comparison.png")
-
+if __name__ == "__main__":
+    main()
